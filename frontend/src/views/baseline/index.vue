@@ -59,6 +59,8 @@
       <span>共 {{ total }} 条基线管理记录</span>
       <span v-if="errorMessage" class="error-text">{{ errorMessage }}</span>
     </footer>
+
+    <WarningPanel />
   </section>
 </template>
 
@@ -66,6 +68,7 @@
 import { onMounted, ref } from 'vue'
 
 import { request } from '@/api/client'
+import WarningPanel from '@/views/baseline/WarningPanel.vue'
 
 type Row = Record<string, string | number | null>
 

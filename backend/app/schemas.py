@@ -21,6 +21,48 @@ class ActionResult(BaseModel):
     entry: dict[str, Any] | None = None
 
 
+class LongChainSummary(BaseModel):
+    """等待汇总：等待数与下游触发范围来自同一份快照水位。"""
+
+    chain_id: str
+    chain_name: str
+    relation_count: int
+    waiting_count: int
+    satisfied_count: int
+    released_count: int
+    downstream_triggered: list[str]
+    downstream_pending: list[str]
+    head_job: str | None = None
+    tail_job: str | None = None
+    watermark_seq: int = 0
+
+
+class LongChainPage(BaseModel):
+    """长链依赖查询结果：游标固定，页内明细与分页总数同一水位。"""
+
+    items: list[dict[str, Any]]
+    total: int
+    page: int = 1
+    size: int = 20
+    cursor: str
+    next_cursor: str
+    watermark: dict[str, Any]
+    summary: list[LongChainSummary]
+    total_waiting: int
+    warning_count: int
+    has_more: bool = False
+
+
+class LongChainLocate(BaseModel):
+    """按作业定位上下游位置：筛选、检索、分页都基于同一游标窗口。"""
+
+    job: str
+    cursor: str
+    watermark: dict[str, Any]
+    positions: list[dict[str, Any]]
+    chains: list[str]
+
+
 class EntryPayload(BaseModel):
     """登记或修改一条业务记录时提交的字段集合。"""
 

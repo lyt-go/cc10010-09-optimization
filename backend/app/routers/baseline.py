@@ -1,4 +1,8 @@
-"""基线管理接口：维护基线定义，覆盖提交基线评审、启用基线、停用基线等动作。"""
+"""基线管理接口：维护基线定义，覆盖提交基线评审、启用基线、停用基线等动作。
+
+预警清单（/warnings）读取长链依赖查询结果，把等待水位反映到基线预警，
+与依赖解析共享同一游标窗口。
+"""
 from __future__ import annotations
 
 from typing import Any
@@ -16,6 +20,14 @@ LIST_FIELDS = ["基线编号", "基线名称", "承诺完成时间", "预警余�
 STATUSES = ["草稿", "基线评审中", "已启用", "已停用"]
 
 
+def _page_size(size: int) -> int:
+    if size > 200:
+        raise HTTPException(status_code=400, detail="每页最多 200 条，请缩小分页范围")
+    if size < 1:
+        raise HTTPException(status_code=400, detail="每页至少 1 条")
+    return size
+
+
 @router.get("", response_model=PageResult[dict])
 def list_entries(
     keyword: str | None = Query(default=None, description="按基线编号检索"),
@@ -24,10 +36,24 @@ def list_entries(
     size: int = 20,
 ) -> PageResult[dict]:
     """按基线编号与状态过滤基线管理列表；没有数据时返回空页，不报错。"""
-    if size > 200:
-        raise HTTPException(status_code=400, detail="每页最多 200 条，请缩小分页范围")
+    _page_size(size)
     items, total = service.list_entries(keyword=keyword, status=status, page=page, size=size)
     return PageResult(items=items, total=total, page=page, size=size)
+
+
+@router.get("/export")
+def export_entries() -> dict[str, Any]:
+    """导出基线管理清单：返回当前过滤条件下的全量数据。"""
+    items, total = service.list_entries(page=1, size=10000)
+    return {"module": "baseline", "total": total, "items": items}
+
+
+@router.get("/warnings")
+def warning_list(
+    cursor: str | None = Query(default=None, description="依赖解析返回的游标，跨模块共享同一窗口"),
+) -> dict[str, Any]:
+    """读取基线预警清单：等待水位来自长链依赖查询结果，已解除关系不计入。"""
+    return service.warning_view(cursor=cursor)
 
 
 @router.get("/{entry_id}", response_model=dict)
@@ -56,10 +82,3 @@ def run_action(entry_id: int, payload: EntryPayload) -> ActionResult:
     if entry is None:
         return ActionResult(ok=False, message=message)
     return ActionResult(ok=True, message=message, entry=entry)
-
-
-@router.get("/export")
-def export_entries() -> dict[str, Any]:
-    """导出基线管理清单：返回当前过滤条件下的全量数据。"""
-    items, total = service.list_entries(page=1, size=10000)
-    return {"module": "baseline", "total": total, "items": items}

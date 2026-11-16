@@ -59,6 +59,8 @@
       <span>共 {{ total }} 条依赖解析记录</span>
       <span v-if="errorMessage" class="error-text">{{ errorMessage }}</span>
     </footer>
+
+    <LongChainPanel />
   </section>
 </template>
 
@@ -66,6 +68,7 @@
 import { onMounted, ref } from 'vue'
 
 import { request } from '@/api/client'
+import LongChainPanel from '@/views/dependency/LongChainPanel.vue'
 
 type Row = Record<string, string | number | null>
 

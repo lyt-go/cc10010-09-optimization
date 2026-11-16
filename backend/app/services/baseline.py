@@ -1,8 +1,13 @@
-"""基线管理业务规则：状态流转、字段校验与筛选口径都收在这里。"""
+"""基线管理业务规则：状态流转、字段校验与筛选口径都收在这里。
+
+预警清单不在这里另算等待口径——等待水位统一从长链依赖查询服务取，
+保证基线与依赖解析看到的是同一份结果。
+"""
 from __future__ import annotations
 
 from typing import Any
 
+from app.services.longchain import longchain_service
 from app.store import store
 
 MODULE = "baseline"
@@ -13,6 +18,51 @@ NEGATIVE_ACTIONS = ["停用基线"]
 
 
 class BaselineService:
+    def related_jobs(self, entry: dict[str, Any]) -> list[str]:
+        """基线关联的作业列表，兼容逗号/顿号两种已有写法。"""
+        raw = str(entry.get("关联作业列表") or "")
+        for separator in ("，", "、", ";"):
+            raw = raw.replace(separator, ",")
+        return [part.strip() for part in raw.split(",") if part.strip()]
+
+    def warning_view(self, *, cursor: str | None = None) -> dict[str, Any]:
+        """把长链等待水位映射到基线预警；与依赖解析共享同一游标。"""
+        view = longchain_service.warnings(cursor=cursor)
+        waiting = view["warnings"]
+        summary_by_chain = {item["chain_id"]: item for item in view["summary"]}
+        entries: list[dict[str, Any]] = []
+        for baseline in self.list_entries(page=1, size=1000)[0]:
+            jobs = self.related_jobs(baseline)
+            chain_ids = sorted(
+                {
+                    str(row["链路编号"])
+                    for row in waiting
+                    if str(row.get("上游作业")) in jobs or str(row.get("下游作业")) in jobs
+                }
+            )
+            waiting_count = sum(
+                int(summary_by_chain.get(chain_id, {}).get("waiting_count", 0))
+                for chain_id in chain_ids
+            )
+            entries.append(
+                {
+                    "基线编号": baseline.get("基线编号"),
+                    "基线名称": baseline.get("基线名称"),
+                    "承诺完成时间": baseline.get("承诺完成时间"),
+                    "预警余量分钟": baseline.get("预警余量分钟"),
+                    "破线级别": baseline.get("破线级别"),
+                    "关联作业列表": jobs,
+                    "关联链路": chain_ids,
+                    "等待关系数": waiting_count,
+                    "是否预警": waiting_count > 0,
+                    "水位口径版本": view["watermark"]["policy_version"],
+                    "游标高水位": view["watermark"]["arrival_high"],
+                }
+            )
+        entries.sort(key=lambda item: (not item["是否预警"], str(item["基线编号"])))
+        enriched = {**view, "warnings": entries, "waiting": waiting}
+        return enriched
+
     def list_entries(
         self,
         *,
